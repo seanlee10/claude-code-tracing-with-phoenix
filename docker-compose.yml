@@ -1,0 +1,65 @@
+# version: "3.9"
+services:
+  postgres:
+    image: postgres:17
+    container_name: litellm-postgres
+    environment:
+      POSTGRES_DB: phoenix
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: yourpassword
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d phoenix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - litellm-network
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"  # Map container port 4000 to host
+    environment:
+      - LITELLM_MASTER_KEY="sk-1234"
+      - LITELLM_SALT_KEY="sk-abcd1234"
+      - UI_USERNAME=admin
+      - UI_PASSWORD=admin123
+      # Fixed: Use service name 'postgres' and internal port 5432
+      - DATABASE_URL=postgresql://postgres:yourpassword@postgres:5432/litellm
+      - STORE_MODEL_IN_DB=True
+    volumes:
+      - ./litellm.config.yaml:/app/litellm.config.yaml
+    command: --port 4000
+    # Added: Wait for postgres to be healthy before starting
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - litellm-network
+  
+  phoenix:
+    image: arizephoenix/phoenix:version-11.24
+    container_name: phoenix-app
+    environment:
+      - PHOENIX_SQL_DATABASE_URL=postgresql://postgres:yourpassword@postgres:5432/phoenix
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - litellm-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  litellm-network:
+    driver: bridge
